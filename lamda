@@ -1,0 +1,39 @@
+import boto3
+import re
+
+def lambda_handler(event, context):
+    # Get the CloudTrail event details
+    event_details = event['detail']
+    event_name = event_details['eventName']
+    identity_provider_name = event_details['requestParameters']['Name']
+
+    # If the event is not relevant, return
+    if event_name not in ['CreateOpenIDConnectProvider', 'UpdateOpenIDConnectProviderThumbprint']:
+        return {
+            'statusCode': 200,
+            'body': 'Not a relevant event. Ignored.'
+        }
+
+    # Get the IAM client
+    iam_client = boto3.client('iam')
+
+    # Extract the issuer URL from the request
+    oidc_url = event_details['requestParameters']['Url']
+
+    # Validate the issuer URL against your EKS cluster URL
+    if not validate_oidc_url(oidc_url):
+        # If the URL is not valid, raise an error or deny the request
+        raise ValueError(f"Invalid OIDC URL: {oidc_url}. It should match the EKS cluster's issuer URL.")
+
+    # If the issuer URL is valid, allow the request to proceed
+    return {
+        'statusCode': 200,
+        'body': f"Identity provider '{identity_provider_name}' created/updated successfully."
+    }
+
+def validate_oidc_url(oidc_url):
+    # Replace 'cluster_name' and 'region' with your EKS cluster name and region
+    # Example EKS issuer URL format: https://oidc.eks.region.amazonaws.com/id/cluster_name
+    expected_url_pattern = r'https:\/\/oidc\.eks\..*\.amazonaws\.com\/id\/cluster_name'
+
+    return re.match(expected_url_pattern, oidc_url) is not None
