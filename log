@@ -1,0 +1,50 @@
+{
+    "eventVersion": "1.08",
+    "userIdentity": {
+        "type": "AssumedRole",
+        "principalId": "AROAVF2RSFTJNZDU7E6OW:ANACHE01-aad@stage.kfplcnp.cloud",
+        "arn": "arn:aws:sts::356116475090:assumed-role/AWSReservedSSO_AWS-Organisation-Admin_14375be3df03a587/ANACHE01-aad@stage.kfplcnp.cloud",
+        "accountId": "356116475090",
+        "accessKeyId": "ASIAVF2RSFTJDTZEEIFY",
+        "sessionContext": {
+            "sessionIssuer": {
+                "type": "Role",
+                "principalId": "AROAVF2RSFTJNZDU7E6OW",
+                "arn": "arn:aws:iam::356116475090:role/aws-reserved/sso.amazonaws.com/eu-west-1/AWSReservedSSO_AWS-Organisation-Admin_14375be3df03a587",
+                "accountId": "356116475090",
+                "userName": "AWSReservedSSO_AWS-Organisation-Admin_14375be3df03a587"
+            },
+            "webIdFederationData": {},
+            "attributes": {
+                "creationDate": "2023-08-10T00:20:36Z",
+                "mfaAuthenticated": "false"
+            }
+        }
+    },
+    "eventTime": "2023-08-10T00:57:12Z",
+    "eventSource": "iam.amazonaws.com",
+    "eventName": "CreateOpenIDConnectProvider",
+    "awsRegion": "us-east-1",
+    "sourceIPAddress": "147.161.166.195",
+    "userAgent": "AWS Internal",
+    "requestParameters": {
+        "clientIDList": [
+            "sts.amazon.com"
+        ],
+        "thumbprintList": [
+            "b3dd7606d2b5a8b4a13771dbecc9ee1cecafa38a"
+        ],
+        "url": "https://gitlab.com"
+    },
+    "responseElements": {
+        "openIDConnectProviderArn": "arn:aws:iam::356116475090:oidc-provider/gitlab.com"
+    },
+    "requestID": "f43601c6-b50b-4708-a790-f83e27c3c8ae",
+    "eventID": "2c0c33fe-3e80-44ae-b294-e3d9ea89d0d3",
+    "readOnly": false,
+    "eventType": "AwsApiCall",
+    "managementEvent": true,
+    "recipientAccountId": "356116475090",
+    "eventCategory": "Management",
+    "sessionCredentialFromConsole": "true"
+}
