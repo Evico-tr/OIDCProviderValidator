@@ -37,3 +37,22 @@ def validate_oidc_url(oidc_url):
     expected_url_pattern = r'https:\/\/oidc\.eks\..*\.amazonaws\.com\/id\/*'
 
     return re.match(expected_url_pattern, oidc_url) is not None
+
+
+
+def deny_creation_request(iam_client, oidc_url):
+    # Delete the IDP that was created
+    response = iam_client.list_open_id_connect_providers()
+    for provider in response['OpenIDConnectProviderList']:
+        if provider['Url'] == oidc_url:
+            provider_arn = provider['Arn']
+            iam_client.delete_open_id_connect_provider(OpenIDConnectProviderArn=provider_arn)
+            return {
+                'statusCode': 400,
+                'body': 'OIDC IDP creation denied. Invalid OIDC URL.'
+            }
+
+    return {
+        'statusCode': 200,
+        'body': 'OIDC IDP creation denied. OIDC URL not found.'
+    }
