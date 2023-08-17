@@ -1,11 +1,29 @@
 import boto3
 import re
+import gzip
+import json
+import base64
+
 
 def lambda_handler(event, context):
+
+    cw_data = event['awslogs']['data']
+    print(f'data: {cw_data}')
+    print(f'type: {type(cw_data)}')
+    compressed_payload = base64.b64decode(cw_data)
+    uncompressed_payload = gzip.decompress(compressed_payload)
+    payload = json.loads(uncompressed_payload)
+    print('payload')
+    print(payload)
+    log_events = payload['logEvents']
+    print('log_events')
+    print(log_events)
+    
+
     # Get the CloudTrail event details
-    event_details = event['detail']
+    event_details = json.loads(log_events[0]['message'])
     event_name = event_details['eventName']
-    identity_provider_name = event_details['requestParameters']['Name']
+    identity_provider_name = event_details['requestParameters']['url']
 
     # If the event is not relevant, return
     if event_name not in ['CreateOpenIDConnectProvider', 'UpdateOpenIDConnectProviderThumbprint']:
@@ -18,12 +36,13 @@ def lambda_handler(event, context):
     iam_client = boto3.client('iam')
 
     # Extract the issuer URL from the request
-    oidc_url = event_details['requestParameters']['Url']
+    oidc_url = event_details['requestParameters']['url']
 
     # Validate the issuer URL against your EKS cluster URL
     if not validate_oidc_url(oidc_url):
         # If the URL is not valid, raise an error or deny the request
-        raise ValueError(f"Invalid OIDC URL: {oidc_url}. It should match the EKS cluster's issuer URL.")
+        return deny_creation_request(iam_client, oidc_url)
+        # raise ValueError(f"Invalid OIDC URL: {oidc_url}. It should match the EKS cluster's issuer URL.")
 
     # If the issuer URL is valid, allow the request to proceed
     return {
@@ -44,13 +63,16 @@ def deny_creation_request(iam_client, oidc_url):
     # Delete the IDP that was created
     response = iam_client.list_open_id_connect_providers()
     for provider in response['OpenIDConnectProviderList']:
-        if provider['Url'] == oidc_url:
-            provider_arn = provider['Arn']
-            iam_client.delete_open_id_connect_provider(OpenIDConnectProviderArn=provider_arn)
-            return {
-                'statusCode': 400,
-                'body': 'OIDC IDP creation denied. Invalid OIDC URL.'
-            }
+        provider_arn = provider['Arn']
+        provider_details = iam_client.get_open_id_connect_provider(OpenIDConnectProviderArn=provider_arn)
+        if 'Url' in provider_details:
+            if f"https://{provider_details['Url']}" == oidc_url:
+                iam_client.delete_open_id_connect_provider(OpenIDConnectProviderArn=provider_arn)
+                print(f"Invalid Identity Provider: {provider_details['Url']} deleted")
+                return {
+                    'statusCode': 400,
+                    'body': 'OIDC IDP creation denied. Invalid OIDC URL.'
+                }
 
     return {
         'statusCode': 200,
