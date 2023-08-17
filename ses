@@ -1,0 +1,16 @@
+def send_email_notification(ses_client, oidc_url):
+    sender_email = "sender@example.com"  # Replace with your verified SES sender email
+    recipient_emails = ["recipient1@example.com", "recipient2@example.com"]  # Add the recipient email addresses
+
+    subject = "Invalid OIDC Identity Provider Created"
+    message = f"The following OIDC IDP was created with an invalid URL: {oidc_url}"
+
+    response = ses_client.send_email(
+        Source=sender_email,
+        Destination={'ToAddresses': recipient_emails},
+        Message={
+            'Subject': {'Data': subject},
+            'Body': {'Text': {'Data': message}}
+        }
+    )
+    print("Email notification sent:", response)
