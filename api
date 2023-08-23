@@ -2,8 +2,13 @@ def get_team_name(account_id):
     # Call the first ServiceNow API to get team names associated with account IDs
     sn_api_url = f"https://your-service-now-api-url/account-teams/{account_id}"
     
+    username = "your_username"
+    password = "your_password"
+    credentials = f"{username}:{password}"
+    base64_credentials = base64.b64encode(credentials.encode()).decode()
+    
     headers = {
-        "Authorization": "Bearer YOUR_API_TOKEN",
+        "Authorization": f"Basic {base64_credentials}",
         "Content-Type": "application/json"
     }
     
