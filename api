@@ -20,3 +20,38 @@ def get_team_name(account_id):
         return team_name
     else:
         raise Exception("Error fetching team name from ServiceNow API")
+
+
+def get_team_emails(team_names):
+    # Call the second ServiceNow API to get the email addresses of the teams
+    sn_api_url = "https://your-service-now-api-url/team-email"
+    
+    username = "your_username"
+    password = "your_password"
+    credentials = f"{username}:{password}"
+    base64_credentials = base64.b64encode(credentials.encode()).decode()
+    
+    headers = {
+        "Authorization": f"Basic {base64_credentials}",
+        "Content-Type": "application/json"
+    }
+    
+    team_emails = []
+    
+    for team_name in team_names:
+        params = {"teamName": team_name}
+        
+        response = requests.get(sn_api_url, headers=headers, params=params)
+        
+        if response.status_code == 200:
+            data = response.json()
+            team_email = data.get("teamEmail")
+            team_emails.append(team_email)
+        else:
+            raise Exception("Error fetching team email from ServiceNow API")
+    
+    return team_emails
+
+
+
+
