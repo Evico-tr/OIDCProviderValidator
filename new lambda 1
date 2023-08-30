@@ -1,0 +1,81 @@
+import boto3
+import json
+import requests
+
+def lambda_handler(event, context):
+    # Extract necessary information from the event
+    account_id = event['account']
+    provider_name = event['provider_name']
+    
+    # Get the team name from the first API
+    team_name = get_team_name_from_service_now(account_id)
+    
+    # Get the team lead's email from the second API
+    team_lead_email = get_team_lead_email_from_service_now(team_name)
+    
+    # Send notification emails to team lead and security using SES
+    ses_client = boto3.client('ses')
+    sender_email = 'your-sender-email@example.com'
+    subject = 'Wrong OIDC Provider Created'
+    message = f"An invalid OIDC provider with name '{provider_name}' was created in your account {account_id}. " \
+              f"Please delete it."
+    
+    response = ses_client.send_email(
+        Source=sender_email,
+        Destination={'ToAddresses': [team_lead_email, 'security-team@example.com']},
+        Message={
+            'Subject': {'Data': subject},
+            'Body': {'Text': {'Data': message}}
+        }
+    )
+    
+    # Log the event in S3
+    log_event_in_s3(event)
+    
+    return {
+        'statusCode': 200,
+        'body': json.dumps('Email sent and event logged')
+    }
+
+def get_team_name_from_service_now(account_id):
+    # Make an API request to fetch the team name based on the account ID
+    url = f'https://your-service-now-api-url.com/teams?accountID={account_id}'
+    headers = {'Authorization': 'Basic your-base64-encoded-credentials'}
+    
+    response = requests.get(url, headers=headers)
+    data = response.json()
+    
+    # Extract the team name from the response
+    team_name = data['result'][0]['team_name']  # Assuming only one result is returned
+    
+    return team_name
+
+def get_team_lead_email_from_service_now(team_name):
+    # Make an API request to fetch the team lead's email based on the team name
+    url = f'https://your-service-now-api-url.com/team_emails?teamName={team_name}'
+    headers = {'Authorization': 'Basic your-base64-encoded-credentials'}
+    
+    response = requests.get(url, headers=headers)
+    data = response.json()
+    
+    # Extract the team lead's email from the response
+    team_lead_email = data['result'][0]['email']  # Assuming only one result is returned
+    
+    return team_lead_email
+
+def log_event_in_s3(event):
+    s3_client = boto3.client('s3')
+    bucket_name = 'your-s3-bucket'
+    file_name = 'event_logs.json'
+    
+    # Retrieve previous logs from S3, if any
+    try:
+        previous_logs = json.loads(s3_client.get_object(Bucket=bucket_name, Key=file_name)['Body'].read())
+    except s3_client.exceptions.NoSuchKey:
+        previous_logs = []
+    
+    # Append the new event to the logs
+    previous_logs.append(event)
+    
+    # Upload the updated logs to S3
+    s3_client.put_object(Bucket=bucket_name, Key=file_name, Body=json.dumps(previous_logs))
