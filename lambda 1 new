@@ -1,0 +1,101 @@
+import boto3
+import json
+import requests
+
+def lambda_handler(event, context):
+    # Extract necessary information from the event
+    account_id = event['account']
+    provider_name = event['provider_name']
+    oidc_url = event['oidc_url']
+    
+    # Validate OIDC URL against allowed patterns
+    if not is_valid_oidc_url(oidc_url):
+        log_invalid_oidc_event(account_id, provider_name, oidc_url)
+        send_invalid_oidc_email(account_id, provider_name, oidc_url)
+        return {
+            'statusCode': 400,
+            'body': json.dumps('Invalid OIDC URL')
+        }
+    
+    # Fetch team name and team lead email from the API
+    team_name, team_lead_email = fetch_team_info(account_id)
+    
+    if team_name is not None:
+        # Rest of the code to send emails to team lead and security team
+        # ...
+    
+    return {
+        'statusCode': 200,
+        'body': json.dumps('Email sent and event logged')
+    }
+
+def is_valid_oidc_url(oidc_url):
+    allowed_patterns = get_allowed_oidc_url_patterns()
+    for pattern in allowed_patterns:
+        if pattern in oidc_url:
+            return True
+    return False
+
+def get_allowed_oidc_url_patterns():
+    # Retrieve allowed OIDC URL patterns from environment variables or DynamoDB
+    # Return a list of allowed patterns
+    pass  # Implement your logic here
+
+def log_invalid_oidc_event(account_id, provider_name, oidc_url):
+    s3_client = boto3.client('s3')
+    bucket_name = 'your-s3-bucket-name'
+    log_key = f'invalid_oidc_events/{account_id}/{provider_name}.json'
+    
+    event_data = {
+        'account_id': account_id,
+        'provider_name': provider_name,
+        'oidc_url': oidc_url,
+        'timestamp': str(datetime.now())
+    }
+    
+    s3_client.put_object(
+        Bucket=bucket_name,
+        Key=log_key,
+        Body=json.dumps(event_data),
+        ContentType='application/json'
+    )
+
+def fetch_team_info(account_id):
+    # Make an API request to fetch team name and team lead email
+    api_url = 'https://your-api-url.com/team-info'
+    headers = {
+        'Authorization': 'Basic your-basic-auth-token'
+    }
+    params = {
+        'accountID': account_id
+    }
+    
+    response = requests.get(api_url, headers=headers, params=params)
+    
+    if response.status_code == 200:
+        team_data = response.json()
+        team_name = team_data.get('team_name')
+        team_lead_email = team_data.get('team_lead_email')
+        return team_name, team_lead_email
+    
+    return None, None
+
+def send_invalid_oidc_email(account_id, provider_name, oidc_url, team_name, team_lead_email):
+    ses_client = boto3.client('ses', region_name='your-region-name')
+    sender_email = 'your-sender-email@example.com'
+    subject = 'Invalid OIDC Provider Created'
+    message = f"An invalid OIDC provider with name '{provider_name}' was created in your account {account_id} " \
+              f"with OIDC URL '{oidc_url}'. Please create a provider with a valid OIDC URL."
+    
+    recipient_emails = [team_lead_email, 'security-team@example.com']
+    
+    # Send the email to each recipient
+    for recipient_email in recipient_emails:
+        response = ses_client.send_email(
+            Source=sender_email,
+            Destination={'ToAddresses': [recipient_email]},
+            Message={
+                'Subject': {'Data': subject},
+                'Body': {'Text': {'Data': message}}
+            }
+        )
