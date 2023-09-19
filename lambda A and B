@@ -1,0 +1,152 @@
+import boto3
+import json
+import logging
+import os
+
+# Initialize AWS SDK clients
+iam_client = boto3.client('iam')
+s3_client = boto3.client('s3')
+ses_client = boto3.client('ses')
+
+# Set the S3 bucket and prefix for event logging
+s3_bucket = os.environ.get('S3_BUCKET_NAME')
+s3_prefix = os.environ.get('S3_PREFIX', 'oidc-provider-logs/')
+
+# Set the email addresses for the security team and SES sender email
+security_team_email = os.environ.get('SECURITY_TEAM_EMAIL')
+ses_sender_email = os.environ.get('SES_SENDER_EMAIL')
+
+# Initialize logger
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+def lambda_handler(event, context):
+    try:
+        # Parse the event
+        event_name = event['eventName']
+        request_parameters = event['requestParameters']
+        url = request_parameters.get('url', '')
+        account_id = event['userIdentity']['accountId']
+
+        # Validate the OIDC issuer URL
+        if not is_issuer_url_valid(url):
+            logger.error(f"Invalid OIDC issuer URL: {url}")
+            log_event(event)
+            send_security_email(account_id, url)
+            send_team_email(account_id, url)
+
+        return {
+            'statusCode': 200,
+            'body': json.dumps('Validation succeeded')
+        }
+    except Exception as e:
+        logger.error(f"Error: {str(e)}")
+        return {
+            'statusCode': 500,
+            'body': json.dumps(f'Error: {str(e)}')
+        }
+
+def is_issuer_url_valid(issuer_url):
+    # Implement your validation logic here
+    # Return True if valid, False if invalid
+    # You can check if the issuer URL matches allowed patterns
+
+def log_event(event):
+    # Log the event to an S3 bucket
+    try:
+        s3_key = s3_prefix + event['eventID']
+        s3_client.put_object(
+            Bucket=s3_bucket,
+            Key=s3_key,
+            Body=json.dumps(event, indent=2)
+        )
+    except Exception as e:
+        logger.error(f"Error logging event to S3: {str(e)}")
+
+def send_security_email(account_id, url):
+    # Implement code to send email to the security team
+    # You can use SES or another email service for this
+
+def send_team_email(account_id, url):
+    # Implement code to send email to the team that owns the account
+    # You can use SES or another email service for this
+
+
+
+
+
+
+
+
+import boto3
+import json
+import logging
+import os
+
+# Initialize AWS SDK clients
+iam_client = boto3.client('iam')
+ses_client = boto3.client('ses')
+
+# Set the team lead email
+team_lead_email = os.environ.get('TEAM_LEAD_EMAIL')
+
+# Initialize logger
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+def lambda_handler(event, context):
+    try:
+        # Implement logic to check if the OIDC provider has been deleted
+        # You can use the IAM client to list OIDC providers and check their status
+
+        # Example: List OIDC providers
+        response = iam_client.list_open_id_connect_providers()
+        oidc_providers = response.get('OpenIDConnectProviderList', [])
+
+        # Implement your logic to check if the provider exists or has been deleted
+        for provider in oidc_providers:
+            # Check the status or other criteria to determine if it exists
+
+            # If the provider still exists, send an email to the team lead
+            if provider['Url'] == 'YOUR_OIDC_ISSUER_URL':
+                send_team_lead_email()
+
+        return {
+            'statusCode': 200,
+            'body': json.dumps('Check succeeded')
+        }
+    except Exception as e:
+        logger.error(f"Error: {str(e)}")
+        return {
+            'statusCode': 500,
+            'body': json.dumps(f'Error: {str(e)}')
+        }
+
+def send_team_lead_email():
+    # Implement code to send an email to the team lead
+    # You can use SES or another email service for this
+    subject = "OIDC Provider Check"
+    message = "The OIDC provider is still active. Please take action."
+    
+    try:
+        response = ses_client.send_email(
+            Source=team_lead_email,
+            Destination={
+                'ToAddresses': [team_lead_email],
+            },
+            Message={
+                'Subject': {
+                    'Data': subject,
+                },
+                'Body': {
+                    'Text': {
+                        'Data': message,
+                    },
+                },
+            },
+        )
+        logger.info(f"Email sent to team lead: {response['MessageId']}")
+    except Exception as e:
+        logger.error(f"Error sending email to team lead: {str(e)}")
+
+# This Lambda function should be triggered on a schedule using CloudWatch Events.
