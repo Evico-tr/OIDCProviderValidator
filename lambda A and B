@@ -150,3 +150,33 @@ def send_team_lead_email():
         logger.error(f"Error sending email to team lead: {str(e)}")
 
 # This Lambda function should be triggered on a schedule using CloudWatch Events.
+
+
+
+
+
+
+import os
+import re
+
+# Retrieve the environment variable and split it into a list
+patterns_env = os.environ.get('ALLOWED_OIDC_PATTERNS', '')
+patterns = patterns_env.split(',')
+
+# OIDC issuer URL to compare
+issuer_url = 'https://oidc.eks.us-west-2.amazonaws.com/id/'
+
+# Iterate through the list of patterns
+for pattern in patterns:
+    if re.match(pattern, issuer_url):
+        print(f"Match found for pattern: {pattern}")
+        break  # Exit the loop if a match is found
+
+# If no match is found, you can handle it here
+print("No match found for any pattern.")
+
+
+
+
+ALLOWED_OIDC_PATTERNS=https:\/\/oidc\.eks\..\.amazonaws\.com\/id\/,https:\/\/example\.com\/oidc
+
