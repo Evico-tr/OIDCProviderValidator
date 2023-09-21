@@ -255,3 +255,40 @@ if __name__ == '__main__':
         'body': json.dumps({'url': 'https://oidc.eks.amazonaws.com/id/'})
     }
     lambda_handler(sample_event, None)
+
+
+
+import json
+import logging
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+def lambda_handler(event, context):
+    try:
+        # Check the event name
+        event_name = event['eventName']
+        if event_name not in ["CreateOpenIDConnectProvider", "UpdateOpenIDConnectProviderThumbprint"]:
+            raise ValueError(f"Invalid event name: {event_name}")
+
+        # Validate the OIDC issuer URL
+        if not validate_oidc_url(event['requestParameters']['url']):
+            raise ValueError("Invalid OIDC issuer URL")
+
+        # Your logic to send email and log to S3 goes here
+
+        return {
+            'statusCode': 200,
+            'body': json.dumps('Success')
+        }
+    except Exception as e:
+        logger.error(f"Error: {str(e)}")
+        return {
+            'statusCode': 500,
+            'body': json.dumps(f'Error: {str(e)}')
+        }
+
+def validate_oidc_url(url):
+    # Your validation logic goes here
+    # Return True if the URL is valid, otherwise return False
+    pass
