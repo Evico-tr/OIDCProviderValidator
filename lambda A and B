@@ -180,3 +180,78 @@ print("No match found for any pattern.")
 
 ALLOWED_OIDC_PATTERNS=https:\/\/oidc\.eks\..\.amazonaws\.com\/id\/,https:\/\/example\.com\/oidc
 
+
+
+
+
+import os
+import json
+import boto3
+import re
+import logging
+from botocore.exceptions import NoCredentialsError
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+def lambda_handler(event, context):
+    # Get the expected OIDC issuer URL patterns from environment variables
+    allowed_patterns = os.environ.get('ALLOWED_OIDC_PATTERNS', '').split(',')
+
+    # Extract the OIDC issuer URL from the event
+    event_body = json.loads(event['body'])
+    oidc_issuer_url = event_body.get('url', '')
+
+    # Check if the OIDC issuer URL matches any of the allowed patterns
+    if any(re.match(pattern, oidc_issuer_url) for pattern in allowed_patterns):
+        # The issuer URL is valid, no action needed
+        return {
+            'statusCode': 200,
+            'body': json.dumps('Issuer URL is valid.')
+        }
+    else:
+        # The issuer URL is not valid, send an email
+        send_email(oidc_issuer_url)
+        return {
+            'statusCode': 400,
+            'body': json.dumps('Invalid issuer URL. Email sent to team and security.')
+        }
+
+def send_email(issuer_url):
+    # Create an SES client
+    ses = boto3.client('ses', region_name='us-east-1')
+
+    # Email parameters
+    subject = 'Invalid OIDC Issuer URL Detected'
+    body_text = f'The following OIDC issuer URL is invalid: {issuer_url}'
+    body_html = f'<p>The following OIDC issuer URL is invalid: {issuer_url}</p>'
+    sender_email = 'your-sender@example.com'
+    recipient_emails = ['team@example.com', 'security@example.com']  # Add recipient email addresses
+
+    try:
+        # Send the email
+        response = ses.send_email(
+            Source=sender_email,
+            Destination={'ToAddresses': recipient_emails},
+            Message={
+                'Subject': {'Data': subject},
+                'Body': {
+                    'Text': {'Data': body_text},
+                    'Html': {'Data': body_html}
+                }
+            }
+        )
+
+        logger.info(f"Email sent successfully. Message ID: {response['MessageId']}")
+
+    except NoCredentialsError:
+        logger.error("AWS credentials not found.")
+    except Exception as e:
+        logger.error(f"Error sending email: {str(e)}")
+
+if __name__ == '__main__':
+    # For local testing, you can provide a sample event
+    sample_event = {
+        'body': json.dumps({'url': 'https://oidc.eks.amazonaws.com/id/'})
+    }
+    lambda_handler(sample_event, None)
