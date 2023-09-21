@@ -1,0 +1,272 @@
+import boto3
+import re
+import gzip
+import json
+import base64
+import logging
+
+
+# Get the IAM client
+iam_client = boto3.client('iam')
+
+# Initialize SES client
+ses_client = boto3.client('ses')
+
+# Initialize S3 client
+s3_client = boto3.client('s3')
+
+# Extract the issuer URL from the request
+oidc_url = event_details['requestParameters']['url']
+
+# Set the email addresses for the security team and SES sender email
+security_team_email = os.environ.get('SECURITY_TEAM_EMAIL')
+ses_sender_email = os.environ.get('SES_SENDER_EMAIL')
+
+# Initialize logger
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+username = os.environ.get('API_USERNAME')
+password = os.environ.get('API_PASSWORD')
+
+def lambda_handler(event, context):
+
+    cw_data = event['awslogs']['data']
+    print(f'data: {cw_data}')
+    print(f'type: {type(cw_data)}')
+    compressed_payload = base64.b64decode(cw_data)
+    uncompressed_payload = gzip.decompress(compressed_payload)
+    payload = json.loads(uncompressed_payload)
+    print('payload')
+    print(payload)
+    log_events = payload['logEvents']
+    print('log_events')
+    print(log_events)
+    event_details = json.loads(log_events[0]['message'])
+    account_id = event_details['recipientAccountId']
+    
+    try:
+        # Get the CloudTrail event details
+        event_name = event_details['eventName']
+        identity_provider_name = event_details['requestParameters']['url']
+    
+        # If the event is not relevant, return
+        if event_name not in ['CreateOpenIDConnectProvider', 'UpdateOpenIDConnectProviderThumbprint']:
+            return {
+                'statusCode': 200,
+                'body': 'Not a relevant event. Ignored.'
+            }
+    
+        
+        # Validate the issuer URL against your EKS cluster URL
+        if not validate_oidc_url(oidc_url):
+            # If the URL is not valid, raise an error or deny the request
+            # deny_creation_request(iam_client, oidc_url)
+            # send_email_notification(ses_client, oidc_url)
+            # raise ValueError(f"Invalid OIDC URL: {oidc_url}. It should match the EKS cluster's issuer URL.")
+            logger.error(f"Invalid OIDC issuer URL: {oidc_url}")
+            log_event(event)
+            send_security_email(account_id, url)
+            send_team_email(account_id, url)
+            
+            
+        # If the issuer URL is valid, allow the request to proceed
+        return {
+            'statusCode': 200,
+            'body': f"Identity provider '{identity_provider_name}' created/updated successfully."
+        }
+        
+    except Exception as e:
+        logger.error(f"Error: {str(e)}")
+        return {
+            'statusCode': 500,
+            'body': json.dumps(f'Error: {str(e)}')
+        }
+        
+        
+def validate_oidc_url(oidc_url):
+
+    # Expected pattern of OIDC Issuer URL from EKS Cluster
+    expected_url_pattern = r'https:\/\/oidc\.eks\..*\.amazonaws\.com\/id\/*'
+
+    return re.match(expected_url_pattern, oidc_url) is not None
+
+
+
+def deny_creation_request(iam_client, oidc_url):
+    # Delete the IDP that was created
+    response = iam_client.list_open_id_connect_providers()
+    for provider in response['OpenIDConnectProviderList']:
+        provider_arn = provider['Arn']
+        provider_details = iam_client.get_open_id_connect_provider(OpenIDConnectProviderArn=provider_arn)
+        if 'Url' in provider_details:
+            if f"https://{provider_details['Url']}" == oidc_url:
+                iam_client.delete_open_id_connect_provider(OpenIDConnectProviderArn=provider_arn)
+                print(f"Invalid Identity Provider: {provider_details['Url']} deleted")
+                return {
+                    'statusCode': 400,
+                    'body': 'OIDC IDP creation denied. Invalid OIDC URL.'
+                }
+    return {
+        'statusCode': 200,
+        'body': 'OIDC IDP creation denied. OIDC URL not found.'
+    }
+    
+def send_email_notification(ses_client, oidc_url):
+    sender_email = "emeka.anachebe@kingfisher.com"  #verified SES sender email
+    recipient_emails = ["thomas.davies@kingfisher.com","christopher.thornton@kingfisher.com" , "emeka.anachebe@kingfisher.com"]  # Add the recipient email addresses
+
+    subject = "Invalid OIDC Identity Provider Created"
+    message = f"The following OIDC IDP was created with an invalid Issuer URL and has been deleted: {oidc_url}"
+
+    response = ses_client.send_email(
+        Source=sender_email,
+        Destination={'ToAddresses': recipient_emails},
+        Message={
+            'Subject': {'Data': subject},
+            'Body': {'Text': {'Data': message}}
+        }
+    )
+    print("Email notification sent:", response)
+    
+
+
+def get_team_name(account_id):
+    # Call the first ServiceNow API to get team names associated with account IDs
+    sn_api_url = f"https://kingfisherdev.service-now.com/api/now/table/cmdb_ci_aws_account?sysparm_query=operational_status!%3D11%5Eu_account_idISNOTEMPTY&sysparm_display_value=true&sysparm_exclude_reference_link=true&sysparm_fields=name%2Csupport_group%2Cu_account_id?"
+    
+    username = "CLOUD_OPERATION_USER"
+    password = "Password@123"
+    credentials = f"{username}:{password}"
+    base64_credentials = base64.b64encode(credentials.encode()).decode()
+    
+    headers = {
+        "Authorization": f"Basic {base64_credentials}",
+        "Content-Type": "application/json"
+    }
+    
+    params = {"u_account_id":account_id}
+    response = requests.get(sn_api_url, headers=headers, params=params)
+    
+    if response.status_code == 200:
+        data = response.json()
+        print(data)
+        team_names = [item.get("support_group") for item in data["result"]]
+        print(team_names)
+        return team_names
+    else:
+        raise Exception("Error fetching team name from ServiceNow API")
+    
+
+def get_team_details(team_names):
+    # Call the second ServiceNow API to get the email addresses of the teams
+    sn_api_url = "https://kingfisherdev.service-now.com/api/now/table/sys_user_group?sysparm_display_value=true&sysparm_exclude_reference_link=true&sysparm_fields=name%2Csys_id%2Cmanager%2Cemail"
+    
+    credentials = f"{username}:{password}"
+    base64_credentials = base64.b64encode(credentials.encode()).decode()
+    
+    headers = {
+        "Authorization": f"Basic {base64_credentials}",
+        "Content-Type": "application/json"
+    }
+    
+    team_emails = []
+    managers = []
+    
+    for team_name in team_names:
+        params = {"name": team_name}
+        
+        response = requests.get(sn_api_url, headers=headers, params=params)
+        
+        if response.status_code == 200:
+            data = response.json()
+            result = data.get("result")
+            print(result)
+            team_email = result[0].get("email")
+            manager = result[0].get("manager")
+            team_emails.append(team_email)
+            managers.append(manager)
+        else:
+            raise Exception("Error fetching team email from ServiceNow API")
+    
+    return team_emails , managers
+
+
+def get_teamlead_details(managerIDs):
+    # Call the second ServiceNow API to get the email addresses of the teams
+    sn_api_url = "https://kingfisherdev.service-now.com/api/now/table/sys_user?sysparm_display_value=true&sysparm_exclude_reference_link=true&sysparm_fields=name%2Cuser_name%2Cemail"
+    
+    credentials = f"{username}:{password}"
+    base64_credentials = base64.b64encode(credentials.encode()).decode()
+    
+    headers = {
+        "Authorization": f"Basic {base64_credentials}",
+        "Content-Type": "application/json"
+    }
+    
+    manager_names = []
+    manager_emails = []
+    
+    for managerID in managerIDs:
+        params = {"user_name": managerID}
+        
+        response = requests.get(sn_api_url, headers=headers, params=params)
+        
+        if response.status_code == 200:
+            data = response.json()
+            result = data.get("result")
+            print(result)
+            manager_email = result[0].get("email")
+            manager_name = result[0].get("name")
+            manager_names.append(manager_name)
+            manager_emails.append(manager_email)
+        else:
+            raise Exception("Error fetching team email from ServiceNow API")
+    
+    return manager_names , manager_emails
+
+
+def send_team_email(ses_client, oidc_url):
+    # sender_email = "emeka.anachebe@kingfisher.com"  #verified SES sender email
+    #recipient_emails = ["thomas.davies@kingfisher.com","christopher.thornton@kingfisher.com" , "emeka.anachebe@kingfisher.com"]  # Add the recipient email addresses
+
+    subject = "Invalid OIDC Identity Provider Created"
+    message = f"The following OIDC IDP was created with an invalid Issuer URL: {oidc_url} . Kindly delete it."
+
+    response = ses_client.send_email(
+        Source=ses_sender_email,
+        Destination={'ToAddresses': team_emails},
+        Message={
+            'Subject': {'Data': subject},
+            'Body': {'Text': {'Data': message}}
+        }
+    )
+    print("Email notification sent:", response)
+
+
+def send_security_email(ses_client, oidc_url):
+
+    subject = "Invalid OIDC Identity Provider Created"
+    message = f"The following OIDC IDP was created with an invalid Issuer URL: {oidc_url} on the AWS account with ID: {account_id}."
+
+    response = ses_client.send_email(
+        Source=ses_sender_email,
+        Destination={'ToAddresses': security_team_email},
+        Message={
+            'Subject': {'Data': subject},
+            'Body': {'Text': {'Data': message}}
+        }
+    )
+    print("Email notification sent:", response)
+
+team_names = get_team_name(account_id)
+
+print (f"teams are {team_names}")
+
+team_emails , managerIDs = get_team_details(team_names)
+manager_names , manager_emails = get_teamlead_details(managerIDs)
+
+print(team_emails)
+print(managerIDs)
+print(manager_names)
+print(manager_emails)
