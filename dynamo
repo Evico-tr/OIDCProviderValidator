@@ -1,0 +1,148 @@
+import boto3
+import json
+import logging
+import os
+import re
+from datetime import datetime
+
+# Set up logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# Initialize AWS clients and resources
+dynamodb = boto3.client('dynamodb')
+iam = boto3.client('iam')
+ses = boto3.client('ses')
+
+# Get environment variables
+TABLE_NAME = os.environ['TABLE_NAME']
+
+# List of allowed OIDC issuer URL patterns
+ALLOWED_PATTERNS = [
+    r'https:\/\/oidc\.eks\..\.amazonaws\.com\/id\/',
+    # Add more allowed patterns as needed
+]
+
+def validate_oidc_url(issuer_url):
+    # Check if the OIDC issuer URL matches any of the allowed patterns
+    return any(re.match(pattern, issuer_url) for pattern in ALLOWED_PATTERNS)
+
+def lambda_handler(event, context):
+    try:
+        # Extract relevant information from the CloudWatch event
+        event_name = event['detail']['eventName']
+        provider_name = event['detail']['requestParameters']['OpenIDConnectProviderName']
+        issuer_url = event['detail']['requestParameters']['Url']
+
+        # Log the event
+        current_time = int(datetime.now().timestamp())
+        dynamodb.put_item(
+            TableName=TABLE_NAME,
+            Item={
+                'ProviderName': {'S': provider_name},
+                'Status': {'S': 'Created'},
+                'LastCheckedTimestamp': {'N': str(current_time)}
+            }
+        )
+
+        # Validate the OIDC issuer URL
+        if not validate_oidc_url(issuer_url):
+            # Send an email notification to the security team and the team owning the AWS account
+            # Construct the email message
+            subject = 'Invalid OIDC Provider Created'
+            message = f'An invalid OIDC provider "{provider_name}" with issuer URL "{issuer_url}" was created. Please take action.'
+
+            # Replace with the actual email addresses
+            security_team_email = 'security@example.com'
+            team_email = 'team@example.com'
+
+            # Send email to the security team
+            ses.send_email(
+                Source='noreply@example.com',
+                Destination={'ToAddresses': [security_team_email]},
+                Message={'Subject': {'Data': subject}, 'Body': {'Text': {'Data': message}}}
+            )
+
+            # Send email to the team owning the AWS account
+            ses.send_email(
+                Source='noreply@example.com',
+                Destination={'ToAddresses': [team_email]},
+                Message={'Subject': {'Data': subject}, 'Body': {'Text': {'Data': message}}}
+            )
+
+    except Exception as e:
+        logger.error(f"Error: {str(e)}")
+        return {
+            'statusCode': 500,
+            'body': json.dumps(f'Error: {str(e)}')
+        }
+
+    return {
+        'statusCode': 200,
+        'body': json.dumps('Validation completed successfully.')
+
+
+
+
+
+
+
+
+
+import boto3
+import json
+import logging
+import os
+import re
+import json
+
+# Set up logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+# Initialize AWS clients and resources
+dynamodb = boto3.client('dynamodb')
+iam_client = boto3.client('iam')
+
+# Get environment variables
+TABLE_NAME = os.environ['TABLE_NAME']
+ALLOWED_PATTERNS = json.loads(os.environ['ALLOWED_PATTERNS'])
+
+def validate_oidc_url(issuer_url):
+    for pattern in ALLOWED_PATTERNS:
+        if re.match(pattern, issuer_url):
+            return True
+    return False
+
+def lambda_handler(event, context):
+    try:
+        for record in event['Records']:
+            # Parse the CloudWatch log event
+            log_data = json.loads(record['message'])
+
+            # Check if the event name is related to OIDC provider creation or update
+            event_name = log_data.get('eventName', '')
+            if event_name not in ["CreateOpenIDConnectProvider", "UpdateOpenIDConnectProviderThumbprint"]:
+                continue  # Skip events that are not related to OIDC provider
+
+            # Extract issuer URL from the log event data
+            issuer_url = log_data.get('requestParameters', {}).get('url', '')
+
+            if not validate_oidc_url(issuer_url):
+                # Invalid OIDC provider, log it in DynamoDB
+                dynamodb.put_item(
+                    TableName=TABLE_NAME,
+                    Item={'ProviderName': {'S': log_data['responseElements']['clientID']}}
+                )
+
+    except Exception as e:
+        logger.error(f"Error: {str(e)}")
+        return {
+            'statusCode': 500,
+            'body': json.dumps(f'Error: {str(e)}')
+        }
+
+    return {
+        'statusCode': 200,
+        'body': json.dumps('Event processing completed successfully.')
+    }
