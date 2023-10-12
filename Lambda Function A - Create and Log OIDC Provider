@@ -12,23 +12,28 @@ sns_client = boto3.client('sns')
 def validate_oidc_url(issuer_url):
     allowed_patterns = os.environ['ALLOWED_OIDC_URL_PATTERNS'].split(',')
     
-    # Check if the issuer URL matches any of the allowed patterns
-    for pattern in allowed_patterns:
-        if re.match(pattern, issuer_url):
-            return True
+    try:
+        for pattern in allowed_patterns:
+            if re.match(pattern, issuer_url):
+                return True
+    except Exception as e:
+        print(f"Error validating OIDC URL: {str(e)}")
+    
     return False
 
 def send_email(subject, body, recipients):
-    response = ses_client.send_email(
-        Destination={'ToAddresses': recipients},
-        Message={
-            'Subject': {'Data': subject},
-            'Body': {'Text': {'Data': body}}
-        },
-        Source=os.environ['EMAIL_SOURCE']
-    )
-    
-    return response
+    try:
+        response = ses_client.send_email(
+            Destination={'ToAddresses': recipients},
+            Message={
+                'Subject': {'Data': subject},
+                'Body': {'Text': {'Data': body}}
+            },
+            Source=os.environ['EMAIL_SOURCE']
+        )
+        return response
+    except Exception as e:
+        print(f"Error sending email: {str(e)}")
 
 def log_event_in_dynamodb(event_id, event_name, issuer_url):
     try:
@@ -46,35 +51,39 @@ def log_event_in_dynamodb(event_id, event_name, issuer_url):
         print(f"Error logging event: {str(e)}")
 
 def handler(event, context):
-    event_id = event['detail']['eventID']
-    event_name = event['detail']['eventName']
-    issuer_url = event['detail']['requestParameters']['url']
-    
-    if event_name not in ['CreateOpenIDConnectProvider', 'UpdateOpenIDConnectProviderThumbprint']:
+    try:
+        event_id = event['detail']['eventID']
+        event_name = event['detail']['eventName']
+        issuer_url = event['detail']['requestParameters']['url']
+        
+        if event_name not in ['CreateOpenIDConnectProvider', 'UpdateOpenIDConnectProviderThumbprint']:
+            return {
+                'statusCode': 200,
+                'body': 'Event not relevant.'
+            }
+        
+        if validate_oidc_url(issuer_url):
+            return {
+                'statusCode': 200,
+                'body': 'Valid OIDC URL.'
+            }
+        
+        # Send email to team and security
+        team_email = os.environ['TEAM_EMAIL']
+        security_email = os.environ['SECURITY_EMAIL']
+        
+        email_subject = "Invalid OIDC Provider Created"
+        email_body = f"An invalid OIDC provider with the URL {issuer_url} was created."
+        
+        send_email(email_subject, email_body, [team_email, security_email])
+        
+        # Log the event in DynamoDB
+        log_event_in_dynamodb(event_id, event_name, issuer_url)
+        
         return {
             'statusCode': 200,
-            'body': 'Event not relevant.'
+            'body': 'Event processed.'
         }
-    
-    if validate_oidc_url(issuer_url):
-        return {
-            'statusCode': 200,
-            'body': 'Valid OIDC URL.'
-        }
-    
-    # Send email to team and security
-    team_email = os.environ['TEAM_EMAIL']
-    security_email = os.environ['SECURITY_EMAIL']
-    
-    email_subject = "Invalid OIDC Provider Created"
-    email_body = f"An invalid OIDC provider with the URL {issuer_url} was created."
-    
-    send_email(email_subject, email_body, [team_email, security_email])
-    
-    # Log the event in DynamoDB
-    log_event_in_dynamodb(event_id, event_name, issuer_url)
-    
-    return {
-        'statusCode': 200,
-        'body': 'Event processed.'
-    }
+    except Exception as e:
+        print(f"Error handling event: {str(e)}")
+
