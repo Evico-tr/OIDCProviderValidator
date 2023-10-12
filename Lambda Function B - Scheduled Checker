@@ -7,16 +7,18 @@ dynamodb = boto3.client('dynamodb')
 ses_client = boto3.client('ses')
 
 def send_email(subject, body, recipients):
-    response = ses_client.send_email(
-        Destination={'ToAddresses': recipients},
-        Message={
-            'Subject': {'Data': subject},
-            'Body': {'Text': {'Data': body}}
-        },
-        Source=os.environ['EMAIL_SOURCE']
-    )
-    
-    return response
+    try:
+        response = ses_client.send_email(
+            Destination={'ToAddresses': recipients},
+            Message={
+                'Subject': {'Data': subject},
+                'Body': {'Text': {'Data': body}}
+            },
+            Source=os.environ['EMAIL_SOURCE']
+        )
+        return response
+    except Exception as e:
+        print(f"Error sending email: {str(e)}")
 
 def is_oidc_deleted(provider_name):
     try:
@@ -26,31 +28,27 @@ def is_oidc_deleted(provider_name):
     return False
 
 def handler(event, context):
-    # Retrieve the list of providers to check
-    providers_to_check = dynamodb.scan(TableName=os.environ['DYNAMODB_TABLE'])
-    
-    for item in providers_to_check['Items']:
-        provider_name = item['ProviderName']['S']
-        status = item['Status']['S']
+    try:
+        # Retrieve the list of providers to check
+        providers_to_check = dynamodb.scan(TableName=os.environ['DYNAMODB_TABLE'])
         
-        if status != 'Deleted':
-            if is_oidc_deleted(provider_name):
-                # Send an email to team lead
-                team_lead_email = os.environ['TEAM_LEAD_EMAIL']
-                email_subject = "OIDC Provider Not Deleted"
-                email_body = f"The OIDC provider with name {provider_name} was not deleted."
-                send_email(email_subject, email_body, [team_lead_email])
-                
-                # Update the DynamoDB entry to mark it as checked
-                dynamodb.update_item(
-                    TableName=os.environ['DYNAMODB_TABLE'],
-                    Key={'ProviderName': {'S': provider_name}},
-                    UpdateExpression='SET #s = :s',
-                    ExpressionAttributeNames={'#s': 'Status'},
-                    ExpressionAttributeValues={':s': {'S': 'Checked'}}
-                )
-    
-    return {
-        'statusCode': 200,
-        'body': 'Event processed.'
-    }
+        for item in providers_to_check['Items']:
+            provider_name = item['ProviderName']['S']
+            status = item['Status']['S']
+            
+            if status != 'Deleted':
+                if is_oidc_deleted(provider_name):
+                    # Send an email to team lead
+                    team_lead_email = os.environ['TEAM_LEAD_EMAIL']
+                    email_subject = "OIDC Provider Not Deleted"
+                    email_body = f"The OIDC provider with name {provider_name} was not deleted."
+                    send_email(email_subject, email_body, [team_lead_email])
+                    
+                    # Update the DynamoDB entry to mark it as checked
+                    dynamodb.update_item(
+                        TableName=os.environ['DYNAMODB_TABLE'],
+                        Key={'ProviderName': {'S': provider_name}},
+                        UpdateExpression='SET #s = :s',
+                        ExpressionAttributeNames={'#s': 'Status'},
+                        ExpressionAttributeValues={':s': {'S': 'Checked'}}
+                    )
