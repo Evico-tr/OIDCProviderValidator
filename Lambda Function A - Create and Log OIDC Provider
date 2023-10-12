@@ -1,0 +1,80 @@
+import json
+import boto3
+import os
+import re
+
+# Initialize AWS clients
+iam_client = boto3.client('iam')
+dynamodb = boto3.client('dynamodb')
+ses_client = boto3.client('ses')
+sns_client = boto3.client('sns')
+
+def validate_oidc_url(issuer_url):
+    allowed_patterns = os.environ['ALLOWED_OIDC_URL_PATTERNS'].split(',')
+    
+    # Check if the issuer URL matches any of the allowed patterns
+    for pattern in allowed_patterns:
+        if re.match(pattern, issuer_url):
+            return True
+    return False
+
+def send_email(subject, body, recipients):
+    response = ses_client.send_email(
+        Destination={'ToAddresses': recipients},
+        Message={
+            'Subject': {'Data': subject},
+            'Body': {'Text': {'Data': body}}
+        },
+        Source=os.environ['EMAIL_SOURCE']
+    )
+    
+    return response
+
+def log_event_in_dynamodb(event_id, event_name, issuer_url):
+    try:
+        dynamodb.put_item(
+            TableName=os.environ['DYNAMODB_TABLE'],
+            Item={
+                'EventID': {'S': event_id},
+                'EventName': {'S': event_name},
+                'IssuerURL': {'S': issuer_url},
+                'Status': {'S': 'Logged'},
+                'LastCheckedTimestamp': {'N': '0'}
+            }
+        )
+    except Exception as e:
+        print(f"Error logging event: {str(e)}")
+
+def handler(event, context):
+    event_id = event['detail']['eventID']
+    event_name = event['detail']['eventName']
+    issuer_url = event['detail']['requestParameters']['url']
+    
+    if event_name not in ['CreateOpenIDConnectProvider', 'UpdateOpenIDConnectProviderThumbprint']:
+        return {
+            'statusCode': 200,
+            'body': 'Event not relevant.'
+        }
+    
+    if validate_oidc_url(issuer_url):
+        return {
+            'statusCode': 200,
+            'body': 'Valid OIDC URL.'
+        }
+    
+    # Send email to team and security
+    team_email = os.environ['TEAM_EMAIL']
+    security_email = os.environ['SECURITY_EMAIL']
+    
+    email_subject = "Invalid OIDC Provider Created"
+    email_body = f"An invalid OIDC provider with the URL {issuer_url} was created."
+    
+    send_email(email_subject, email_body, [team_email, security_email])
+    
+    # Log the event in DynamoDB
+    log_event_in_dynamodb(event_id, event_name, issuer_url)
+    
+    return {
+        'statusCode': 200,
+        'body': 'Event processed.'
+    }
