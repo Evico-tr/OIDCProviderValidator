@@ -1,0 +1,111 @@
+# Configure the AWS provider
+provider "aws" {
+  region = "us-east-1"
+}
+
+# Create an IAM role for your Lambda functions
+resource "aws_iam_role" "lambda_role" {
+  name = "lambda_role"
+  
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Action = "sts:AssumeRole",
+      Effect = "Allow",
+      Principal = {
+        Service = "lambda.amazonaws.com"
+      },
+    }]
+  })
+}
+
+# Attach permissions policies to the Lambda role, such as SES, DynamoDB, and CloudWatch
+# Add more permissions as needed
+
+# Create the SES settings, including the verified email addresses
+# Make sure to complete the SES verification process for your email addresses
+
+# Create an S3 bucket for event logging
+resource "aws_s3_bucket" "event_logs" {
+  bucket = "your-event-logs-bucket"
+  acl    = "private"
+}
+
+# Create a DynamoDB table to store event logs
+resource "aws_dynamodb_table" "event_log" {
+  name           = "event_log"
+  read_capacity  = 5
+  write_capacity = 5
+  hash_key       = "EventID"
+  attribute {
+    name = "EventID"
+    type = "S"
+  }
+  # Add more attributes as needed
+}
+
+# Define the Lambda function execution role policy
+data "aws_iam_policy_document" "lambda_execution" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    effect  = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+  }
+  # Add more permissions as needed
+}
+
+# Create the first Lambda function
+resource "aws_lambda_function" "lambda_function_a" {
+  function_name = "lambda_function_a"
+  handler      = "index.handler_a"
+  runtime      = "python3.8"
+  s3_bucket    = "your-deployment-bucket"
+  s3_key       = "lambda_function_a.zip"
+  role         = aws_iam_role.lambda_role.arn
+  timeout      = 10
+  environment {
+    variables = {
+      ENV_VARIABLE_1 = "value_1"
+      ENV_VARIABLE_2 = "value_2"
+      # Add more environment variables as needed
+    }
+  }
+  depends_on = [aws_iam_role.lambda_role, aws_s3_bucket.event_logs, aws_dynamodb_table.event_log]
+}
+
+# Create the second Lambda function
+resource "aws_lambda_function" "lambda_function_b" {
+  function_name = "lambda_function_b"
+  handler      = "index.handler_b"
+  runtime      = "python3.8"
+  s3_bucket    = "your-deployment-bucket"
+  s3_key       = "lambda_function_b.zip"
+  role         = aws_iam_role.lambda_role.arn
+  timeout      = 10
+  environment {
+    variables = {
+      ENV_VARIABLE_1 = "value_1"
+      ENV_VARIABLE_2 = "value_2"
+      # Add more environment variables as needed
+    }
+  }
+  depends_on = [aws_iam_role.lambda_role, aws_s3_bucket.event_logs, aws_dynamodb_table.event_log]
+}
+
+# Define the IAM policy to allow Lambda function B to read from the DynamoDB table
+# Ensure that your policy grants appropriate permissions
+
+# Create an AWS CloudWatch event rule and target to trigger Lambda function A based on your event source
+
+# Define your SES email verification settings and permissions for sending emails
+
+# Configure the S3 bucket to log events
+
+# Set up SES event notifications for bounces and complaints and configure SNS topics as needed
+
+# Configure email sending logic for Lambda function A and the polling logic for Lambda function B
+
+# Configure CloudWatch alarms for monitoring and triggering Lambda function B
