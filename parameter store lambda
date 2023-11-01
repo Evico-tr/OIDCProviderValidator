@@ -1,0 +1,14 @@
+import boto3
+import os
+
+# Initialize the AWS SDK client
+ssm = boto3.client('ssm')
+
+# Retrieve secrets from Parameter Store
+parameter_name = os.environ['MY_SECRET_PARAMETER_NAME']  # Get the parameter name from an environment variable
+response = ssm.get_parameter(Name=parameter_name, WithDecryption=True)
+
+# Access the secret value
+secret_value = response['Parameter']['Value']
+
+# Now you can use the 'secret_value' in your Lambda function
