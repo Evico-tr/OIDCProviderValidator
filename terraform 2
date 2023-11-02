@@ -122,3 +122,35 @@ resource "aws_ses_receipt_rule" "oidc_validation_rule" {
     }
   }
 }
+
+
+
+
+resource "aws_cloudwatch_event_rule" "oidc_provider_events" {
+  name        = "OIDCProviderEventsRule"
+  description = "Rule for OIDC Provider events"
+
+  event_pattern = jsonencode({
+    "source": ["aws.iam"],
+    "detail": {
+      "eventName": ["CreateOpenIDConnectProvider", "UpdateOpenIDConnectProviderThumbprint"]
+    }
+  })
+}
+
+
+
+resource "aws_cloudwatch_event_target" "invoke_lambda" {
+  rule = aws_cloudwatch_event_rule.oidc_provider_events.name
+  target_id = "invokeLambdaTarget"
+  arn = aws_lambda_function.your_lambda_function.arn
+}
+
+
+
+resource "aws_lambda_permission" "allow_cloudwatch" {
+  statement_id  = "AllowExecutionFromCloudWatch"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.your_lambda_function.function_name
+  principal     = "events.amazonaws.com"
+}
